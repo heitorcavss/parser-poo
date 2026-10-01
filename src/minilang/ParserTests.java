@@ -18,12 +18,13 @@ public class ParserTests {
                 + "  int i = 0;\n"
                 + "  if (a >= (b + 1) * 2) {\n"
                 + "    a = -a / 2;\n"
-                + "    while (i != 3) { i = i + 1; }\n"
+                + "    i = i + 1;\n"
                 + "  } else {\n"
                 + "    b = 1.5;\n"
                 + "  }\n"
                 + "fim\n");
 
+        err("while fora da gramática", "inicio if (1<2) { while (1<2) {} } else {} fim", 1, 19, "esperado atribuição");
         err("sem inicio", "if (1<2) {} else {} fim", 1, 1, "inicio");
         err("sem fim", "inicio if (1<2) {} else {}", 1, 27, "fim");
         err("sem else", "inicio if (1<2) {} fim", 1, 20, "else");

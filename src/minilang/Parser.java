@@ -3,96 +3,226 @@ package minilang;
 import java.util.ArrayList;
 
 /**
- * Analisador sintático da MiniLang. Recebe a lista de tokens e valida o programa inteiro.
- * Expressões, blocos e comandos ficam em suas próprias classes (ExpressionRule, BlockRule, Statement...).
+ * Analisador sintático da MiniLang. Recebe a lista de tokens e tem um método para cada regra da gramática.
  *
  * <pre>
  * programa   -> inicio declaracao* ifElse fim
- * declaracao -> (int|double) ID ('=' expr)? ';'
+ * declaracao -> (int | double) ID ('=' expr)? ';'
  * ifElse     -> if '(' condicao ')' bloco else bloco
- * bloco      -> '{' comando* '}'
- * comando    -> atribuicao | while
+ * bloco      -> '{' atribuicao* '}'
  * atribuicao -> ID '=' expr ';'
- * while      -> while '(' condicao ')' bloco
- * condicao   -> expr (== != &lt; &gt; &lt;= &gt;=) expr
- * expr       -> termo ((+|-) termo)*
- * termo      -> fator ((*|/) fator)*
+ * condicao   -> expr (== | != | &lt; | &gt; | &lt;= | &gt;=) expr
+ * expr       -> termo ((+ | -) termo)*
+ * termo      -> fator ((* | /) fator)*
  * fator      -> NUMERO | ID | '(' expr ')' | '-' fator
  * </pre>
+ *
+ * Cada método devolve true se reconheceu a regra, ou false se encontrou erro
+ * (o primeiro erro fica guardado e pode ser lido com {@link #getError()}).
  */
-public class Parser extends GrammarRule {
-    private final TokenStream stream;
+public class Parser {
+    private final ArrayList<Token> tokens;
+    private int current = 0;
+    private SyntaxError error = null;
 
     public Parser(ArrayList<Token> tokens) {
-        this.stream = new TokenStream(tokens);
+        this.tokens = tokens;
     }
 
     /** @return true se o código é sintaticamente correto; senão consulte {@link #getError()}. */
     public boolean parse() {
-        return parse(stream);
+        return programa();
     }
 
     public SyntaxError getError() {
-        return stream.getError();
+        return error;
     }
 
-    /** programa -> 'inicio' declaracao* ifElse 'fim' EOF */
-    @Override
-    public boolean parse(TokenStream s) {
-        if (!expect(s, TokenType.INICIO, "o código deve começar com 'inicio'")) {
+    // ---------- regras da gramática ----------
+
+    private boolean programa() {
+        if (!expect(TokenType.INICIO, "o código deve começar com 'inicio'")) {
             return false;
         }
-        while (s.check(TokenType.INT) || s.check(TokenType.DOUBLE)) {
-            if (!declaration(s)) {
+        while (check(TokenType.INT) || check(TokenType.DOUBLE)) {
+            if (!declaracao()) {
                 return false;
             }
         }
-        if (!s.check(TokenType.IF)) {
-            return fail(s, "esperado o bloco 'if' (declarações devem vir antes e o 'if-else' é obrigatório), mas encontrado "
-                    + s.describeCurrent());
+        if (!check(TokenType.IF)) {
+            return fail("esperado o bloco 'if-else' (as declarações vêm antes dele), mas encontrado " + describe());
         }
-        if (!ifElse(s)) {
+        if (!ifElse()) {
             return false;
         }
-        if (s.check(TokenType.IF)) {
-            return fail(s, "apenas um bloco if-else é permitido");
+        if (check(TokenType.IF)) {
+            return fail("apenas um bloco if-else é permitido");
         }
-        if (!expect(s, TokenType.FIM, "esperado 'fim' para encerrar o código")) {
+        if (!expect(TokenType.FIM, "esperado 'fim' para encerrar o código")) {
             return false;
         }
-        return expect(s, TokenType.EOF, "nenhum código é permitido após 'fim'");
+        return expect(TokenType.EOF, "nenhum código é permitido após 'fim'");
     }
 
-    /** declaracao -> ( 'int' | 'double' ) ID ( '=' expr )? ';' */
-    private boolean declaration(TokenStream s) {
-        s.advance(); // int | double
-        if (!expect(s, TokenType.IDENTIFIER, "esperado nome da variável após o tipo")) {
+    private boolean declaracao() {
+        advance(); // int | double
+        if (!expect(TokenType.IDENTIFIER, "esperado nome da variável após o tipo")) {
             return false;
         }
-        if (s.match(TokenType.ASSIGN) && !new ExpressionRule().parse(s)) {
+        if (match(TokenType.ASSIGN) && !expr()) {
             return false;
         }
-        return expect(s, TokenType.SEMICOLON, "esperado ';' ao final da declaração");
+        return expect(TokenType.SEMICOLON, "esperado ';' ao final da declaração");
     }
 
-    /** ifElse -> 'if' '(' condicao ')' bloco 'else' bloco */
-    private boolean ifElse(TokenStream s) {
-        s.advance(); // if
-        if (!expect(s, TokenType.LPAREN, "esperado '(' após 'if'")) {
+    private boolean ifElse() {
+        advance(); // if
+        if (!expect(TokenType.LPAREN, "esperado '(' após 'if'")) {
             return false;
         }
-        if (!new ExpressionRule().parseCondition(s)) {
+        if (!condicao()) {
             return false;
         }
-        if (!expect(s, TokenType.RPAREN, "esperado ')' ao fechar a condição do 'if'")) {
+        if (!expect(TokenType.RPAREN, "esperado ')' ao fechar a condição do 'if'")) {
             return false;
         }
-        if (!new BlockRule().parse(s)) {
+        if (!bloco()) {
             return false;
         }
-        if (!expect(s, TokenType.ELSE, "esperado 'else' (o bloco if-else exige a cláusula else)")) {
+        if (!expect(TokenType.ELSE, "esperado 'else' (o bloco if-else exige a cláusula else)")) {
             return false;
         }
-        return new BlockRule().parse(s);
+        return bloco();
+    }
+
+    private boolean bloco() {
+        if (!expect(TokenType.LBRACE, "esperado '{' para abrir o bloco")) {
+            return false;
+        }
+        while (!check(TokenType.RBRACE)) {
+            if (check(TokenType.EOF) || check(TokenType.FIM)) {
+                return fail("bloco não fechado: esperado '}'");
+            }
+            if (!atribuicao()) {
+                return false;
+            }
+        }
+        advance(); // }
+        return true;
+    }
+
+    private boolean atribuicao() {
+        if (!expect(TokenType.IDENTIFIER, "esperado atribuição (variável '=' expressão ';')")) {
+            return false;
+        }
+        if (!expect(TokenType.ASSIGN, "esperado '=' na atribuição")) {
+            return false;
+        }
+        if (!expr()) {
+            return false;
+        }
+        return expect(TokenType.SEMICOLON, "esperado ';' ao final da atribuição");
+    }
+
+    private boolean condicao() {
+        if (!expr()) {
+            return false;
+        }
+        if (!(check(TokenType.EQ) || check(TokenType.NEQ) || check(TokenType.LT)
+                || check(TokenType.GT) || check(TokenType.LE) || check(TokenType.GE))) {
+            return fail("esperado operador relacional (==, !=, <, >, <=, >=), mas encontrado " + describe());
+        }
+        advance();
+        return expr();
+    }
+
+    private boolean expr() {
+        if (!termo()) {
+            return false;
+        }
+        while (check(TokenType.PLUS) || check(TokenType.MINUS)) {
+            advance();
+            if (!termo()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean termo() {
+        if (!fator()) {
+            return false;
+        }
+        while (check(TokenType.STAR) || check(TokenType.SLASH)) {
+            advance();
+            if (!fator()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean fator() {
+        if (match(TokenType.NUMBER) || match(TokenType.IDENTIFIER)) {
+            return true;
+        }
+        if (match(TokenType.MINUS)) {
+            return fator();
+        }
+        if (match(TokenType.LPAREN)) {
+            if (!expr()) {
+                return false;
+            }
+            return expect(TokenType.RPAREN, "esperado ')' para fechar a expressão");
+        }
+        return fail("esperado número, variável ou '(', mas encontrado " + describe());
+    }
+
+    // ---------- utilitários ----------
+
+    private Token peek() {
+        return tokens.get(current);
+    }
+
+    private boolean check(String type) {
+        return peek().getType().equals(type);
+    }
+
+    private Token advance() {
+        Token t = tokens.get(current);
+        if (!t.getType().equals(TokenType.EOF)) {
+            current++;
+        }
+        return t;
+    }
+
+    private boolean match(String type) {
+        if (check(type)) {
+            advance();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean expect(String type, String message) {
+        if (check(type)) {
+            advance();
+            return true;
+        }
+        return fail(message + ", mas encontrado " + describe());
+    }
+
+    /** Guarda o primeiro erro (na posição do token atual) e devolve false. */
+    private boolean fail(String message) {
+        if (error == null) {
+            Token t = peek();
+            error = new SyntaxError(message, t.getLine(), t.getColumn());
+        }
+        return false;
+    }
+
+    private String describe() {
+        Token t = peek();
+        return t.getType().equals(TokenType.EOF) ? "fim do arquivo" : "'" + t.getLexeme() + "'";
     }
 }
