@@ -14,7 +14,7 @@ public class WhileStatement extends Statement {
         if (!expect(stream, TokenType.LPAREN, "esperado '(' após 'while'")) {
             return false;
         }
-        if (!new ConditionRule().parse(stream)) {
+        if (!new ExpressionRule().parseCondition(stream)) {
             return false;
         }
         if (!expect(stream, TokenType.RPAREN, "esperado ')' ao fechar a condição do 'while'")) {
