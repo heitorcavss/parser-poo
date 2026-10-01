@@ -1,27 +1,34 @@
 package minilang;
 
-import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
+import java.util.ArrayList;
+import java.util.Scanner;
 
+/** Uso: java minilang.Main &lt; arquivo.mini */
 public class Main {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
         System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
         System.setErr(new PrintStream(System.err, true, StandardCharsets.UTF_8));
-        if (args.length != 1) {
-            System.err.println("Uso: java minilang.Main <arquivo.mini>");
-            System.exit(2);
+
+        StringBuilder source = new StringBuilder();
+        Scanner in = new Scanner(System.in, "UTF-8");
+        while (in.hasNextLine()) {
+            source.append(in.nextLine()).append('\n');
         }
-        String source = Files.readString(Path.of(args[0]));
-        try {
-            List<Token> tokens = new Lexer(source).tokenize();
-            new Parser(tokens).parse();
+
+        Lexer lexer = new Lexer(source.toString());
+        ArrayList<Token> tokens = lexer.tokenize();
+        if (lexer.hasError()) {
+            System.err.println(lexer.getError());
+            System.exit(1);
+        }
+
+        Parser parser = new Parser(tokens);
+        if (parser.parse()) {
             System.out.println("OK: código sintaticamente correto.");
-        } catch (SyntaxError e) {
-            System.err.println(e.getMessage());
+        } else {
+            System.err.println(parser.getError());
             System.exit(1);
         }
     }

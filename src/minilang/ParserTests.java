@@ -1,25 +1,28 @@
 package minilang;
 
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+
 /** Testes simples sem dependências externas: rode a main (no IntelliJ, botão ▶ ao lado da classe). */
 public class ParserTests {
     private static int failures = 0;
 
     public static void main(String[] args) {
-        System.setOut(new java.io.PrintStream(System.out, true, java.nio.charset.StandardCharsets.UTF_8));
+        System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
+
         ok("minimo", "inicio if (1 < 2) { } else { } fim");
-        ok("completo", """
-                inicio
-                  int a = 10;
-                  double b;
-                  int i = 0;
-                  if (a >= (b + 1) * 2) {
-                    a = -a / 2;
-                    while (i != 3) { i = i + 1; }
-                  } else {
-                    b = 1.5;
-                  }
-                fim
-                """);
+        ok("completo", "inicio\n"
+                + "  int a = 10;\n"
+                + "  double b;\n"
+                + "  int i = 0;\n"
+                + "  if (a >= (b + 1) * 2) {\n"
+                + "    a = -a / 2;\n"
+                + "    while (i != 3) { i = i + 1; }\n"
+                + "  } else {\n"
+                + "    b = 1.5;\n"
+                + "  }\n"
+                + "fim\n");
 
         err("sem inicio", "if (1<2) {} else {} fim", 1, 1, "inicio");
         err("sem fim", "inicio if (1<2) {} else {}", 1, 27, "fim");
@@ -35,28 +38,39 @@ public class ParserTests {
         err("lixo apos fim", "inicio if (1<2) {} else {} fim int", 1, 32, "após 'fim'");
 
         System.out.println(failures == 0 ? "\nTodos os testes passaram ✅" : "\n" + failures + " teste(s) falharam ❌");
-        if (failures > 0) System.exit(1);
+        if (failures > 0) {
+            System.exit(1);
+        }
+    }
+
+    /** Roda Lexer + Parser e devolve o primeiro erro, ou null se o código é válido. */
+    private static SyntaxError run(String src) {
+        Lexer lexer = new Lexer(src);
+        ArrayList<Token> tokens = lexer.tokenize();
+        if (lexer.hasError()) {
+            return lexer.getError();
+        }
+        Parser parser = new Parser(tokens);
+        return parser.parse() ? null : parser.getError();
     }
 
     private static void ok(String name, String src) {
-        try {
-            new Parser(new Lexer(src).tokenize()).parse();
+        SyntaxError e = run(src);
+        if (e == null) {
             System.out.println("PASS  " + name);
-        } catch (SyntaxError e) {
-            fail(name, "esperava aceitar, mas: " + e.getMessage());
+        } else {
+            fail(name, "esperava aceitar, mas: " + e);
         }
     }
 
     private static void err(String name, String src, int line, int col, String msgPart) {
-        try {
-            new Parser(new Lexer(src).tokenize()).parse();
+        SyntaxError e = run(src);
+        if (e == null) {
             fail(name, "esperava erro, mas foi aceito");
-        } catch (SyntaxError e) {
-            if (e.getLine() == line && e.getColumn() == col && e.getMessage().contains(msgPart)) {
-                System.out.println("PASS  " + name + "  ->  " + e.getMessage());
-            } else {
-                fail(name, "esperado " + line + ":" + col + " contendo '" + msgPart + "', obtido: " + e.getMessage());
-            }
+        } else if (e.getLine() == line && e.getColumn() == col && e.getMessage().contains(msgPart)) {
+            System.out.println("PASS  " + name + "  ->  " + e);
+        } else {
+            fail(name, "esperado " + line + ":" + col + " contendo '" + msgPart + "', obtido: " + e);
         }
     }
 

@@ -1,13 +1,19 @@
 package minilang;
 
-public class SyntaxError extends RuntimeException {
+/** Descreve um erro (léxico ou sintático) com posição. É um objeto comum, não uma exceção. */
+public class SyntaxError {
+    private final String message;
     private final int line;
     private final int column;
 
     public SyntaxError(String message, int line, int column) {
-        super("Erro sintático [linha " + line + ", coluna " + column + "]: " + message);
+        this.message = message;
         this.line = line;
         this.column = column;
+    }
+
+    public String getMessage() {
+        return message;
     }
 
     public int getLine() {
@@ -16,5 +22,10 @@ public class SyntaxError extends RuntimeException {
 
     public int getColumn() {
         return column;
+    }
+
+    @Override
+    public String toString() {
+        return "Erro sintático [linha " + line + ", coluna " + column + "]: " + message;
     }
 }
