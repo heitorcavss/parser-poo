@@ -2,10 +2,6 @@ package minilang;
 
 import minilang.Lexer.Token;
 
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 
 /**
@@ -20,7 +16,6 @@ import java.util.ArrayList;
  * fator      -> NUM | ID | '(' expr ')' | '-' fator
  *
  * Cada método devolve true se reconheceu a regra e false se achou erro (guardado em getErro()).
- * Uso: java minilang.Parser arquivo.mini
  */
 public class Parser {
     private final ArrayList<Token> tokens;
@@ -29,12 +24,6 @@ public class Parser {
 
     public Parser(ArrayList<Token> tokens) {
         this.tokens = tokens;
-    }
-
-    public static void main(String[] args) throws Exception {
-        System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
-        Parser parser = new Parser(Lexer.tokenizar(Files.readString(Path.of(args[0]))));
-        System.out.println(parser.parse() ? "OK: código sintaticamente correto." : parser.getErro());
     }
 
     public boolean parse() { return programa(); }
