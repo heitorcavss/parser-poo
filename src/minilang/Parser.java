@@ -3,226 +3,130 @@ package minilang;
 import java.util.ArrayList;
 
 /**
- * Analisador sintático da MiniLang. Recebe a lista de tokens e tem um método para cada regra da gramática.
- *
- * <pre>
  * programa   -> inicio declaracao* ifElse fim
  * declaracao -> (int | double) ID ('=' expr)? ';'
  * ifElse     -> if '(' condicao ')' bloco else bloco
  * bloco      -> '{' atribuicao* '}'
  * atribuicao -> ID '=' expr ';'
- * condicao   -> expr (== | != | &lt; | &gt; | &lt;= | &gt;=) expr
+ * condicao   -> expr (== | != | < | > | <= | >=) expr
  * expr       -> termo ((+ | -) termo)*
  * termo      -> fator ((* | /) fator)*
- * fator      -> NUMERO | ID | '(' expr ')' | '-' fator
- * </pre>
+ * fator      -> NUM | ID | '(' expr ')' | '-' fator
  *
- * Cada método devolve true se reconheceu a regra, ou false se encontrou erro
- * (o primeiro erro fica guardado e pode ser lido com {@link #getError()}).
+ * Cada método devolve true se reconheceu a regra e false se achou erro (guardado em getErro()).
  */
 public class Parser {
     private final ArrayList<Token> tokens;
-    private int current = 0;
-    private SyntaxError error = null;
+    private int pos = 0;
+    private String erro = null;
 
     public Parser(ArrayList<Token> tokens) {
         this.tokens = tokens;
     }
 
-    /** @return true se o código é sintaticamente correto; senão consulte {@link #getError()}. */
-    public boolean parse() {
-        return programa();
-    }
+    public boolean parse() { return programa(); }
 
-    public SyntaxError getError() {
-        return error;
-    }
-
-    // ---------- regras da gramática ----------
+    public String getErro() { return erro; }
 
     private boolean programa() {
-        if (!expect(TokenType.INICIO, "o código deve começar com 'inicio'")) {
-            return false;
+        if (!consome("inicio")) return false;
+        while (ve("int") || ve("double")) {
+            if (!declaracao()) return false;
         }
-        while (check(TokenType.INT) || check(TokenType.DOUBLE)) {
-            if (!declaracao()) {
-                return false;
-            }
-        }
-        if (!check(TokenType.IF)) {
-            return fail("esperado o bloco 'if-else' (as declarações vêm antes dele), mas encontrado " + describe());
-        }
-        if (!ifElse()) {
-            return false;
-        }
-        if (check(TokenType.IF)) {
-            return fail("apenas um bloco if-else é permitido");
-        }
-        if (!expect(TokenType.FIM, "esperado 'fim' para encerrar o código")) {
-            return false;
-        }
-        return expect(TokenType.EOF, "nenhum código é permitido após 'fim'");
+        return ifElse() && consome("fim") && consome("EOF");
     }
 
     private boolean declaracao() {
-        advance(); // int | double
-        if (!expect(TokenType.IDENTIFIER, "esperado nome da variável após o tipo")) {
-            return false;
+        pos++; // int | double
+        if (!consome("ID")) return false;
+        if (ve("=")) {
+            pos++;
+            if (!expr()) return false;
         }
-        if (match(TokenType.ASSIGN) && !expr()) {
-            return false;
-        }
-        return expect(TokenType.SEMICOLON, "esperado ';' ao final da declaração");
+        return consome(";");
     }
 
     private boolean ifElse() {
-        advance(); // if
-        if (!expect(TokenType.LPAREN, "esperado '(' após 'if'")) {
-            return false;
-        }
-        if (!condicao()) {
-            return false;
-        }
-        if (!expect(TokenType.RPAREN, "esperado ')' ao fechar a condição do 'if'")) {
-            return false;
-        }
-        if (!bloco()) {
-            return false;
-        }
-        if (!expect(TokenType.ELSE, "esperado 'else' (o bloco if-else exige a cláusula else)")) {
-            return false;
-        }
-        return bloco();
+        return consome("if") && consome("(") && condicao() && consome(")")
+                && bloco() && consome("else") && bloco();
     }
 
     private boolean bloco() {
-        if (!expect(TokenType.LBRACE, "esperado '{' para abrir o bloco")) {
-            return false;
+        if (!consome("{")) return false;
+        while (!ve("}")) {
+            if (!atribuicao()) return false;
         }
-        while (!check(TokenType.RBRACE)) {
-            if (check(TokenType.EOF) || check(TokenType.FIM)) {
-                return fail("bloco não fechado: esperado '}'");
-            }
-            if (!atribuicao()) {
-                return false;
-            }
-        }
-        advance(); // }
-        return true;
+        return consome("}");
     }
 
     private boolean atribuicao() {
-        if (!expect(TokenType.IDENTIFIER, "esperado atribuição (variável '=' expressão ';')")) {
-            return false;
-        }
-        if (!expect(TokenType.ASSIGN, "esperado '=' na atribuição")) {
-            return false;
-        }
-        if (!expr()) {
-            return false;
-        }
-        return expect(TokenType.SEMICOLON, "esperado ';' ao final da atribuição");
+        return consome("ID") && consome("=") && expr() && consome(";");
     }
 
     private boolean condicao() {
-        if (!expr()) {
-            return false;
+        if (!expr()) return false;
+        if (!" == != < > <= >= ".contains(" " + tipo() + " ")) {
+            return falha("esperado operador relacional (==, !=, <, >, <=, >=), mas encontrado " + atual());
         }
-        if (!(check(TokenType.EQ) || check(TokenType.NEQ) || check(TokenType.LT)
-                || check(TokenType.GT) || check(TokenType.LE) || check(TokenType.GE))) {
-            return fail("esperado operador relacional (==, !=, <, >, <=, >=), mas encontrado " + describe());
-        }
-        advance();
+        pos++;
         return expr();
     }
 
     private boolean expr() {
-        if (!termo()) {
-            return false;
-        }
-        while (check(TokenType.PLUS) || check(TokenType.MINUS)) {
-            advance();
-            if (!termo()) {
-                return false;
-            }
+        if (!termo()) return false;
+        while (ve("+") || ve("-")) {
+            pos++;
+            if (!termo()) return false;
         }
         return true;
     }
 
     private boolean termo() {
-        if (!fator()) {
-            return false;
-        }
-        while (check(TokenType.STAR) || check(TokenType.SLASH)) {
-            advance();
-            if (!fator()) {
-                return false;
-            }
+        if (!fator()) return false;
+        while (ve("*") || ve("/")) {
+            pos++;
+            if (!fator()) return false;
         }
         return true;
     }
 
     private boolean fator() {
-        if (match(TokenType.NUMBER) || match(TokenType.IDENTIFIER)) {
-            return true;
-        }
-        if (match(TokenType.MINUS)) {
-            return fator();
-        }
-        if (match(TokenType.LPAREN)) {
-            if (!expr()) {
-                return false;
-            }
-            return expect(TokenType.RPAREN, "esperado ')' para fechar a expressão");
-        }
-        return fail("esperado número, variável ou '(', mas encontrado " + describe());
+        if (ve("NUM") || ve("ID")) { pos++; return true; }
+        if (ve("-")) { pos++; return fator(); }
+        if (ve("(")) { pos++; return expr() && consome(")"); }
+        return falha("esperado número, variável ou '(', mas encontrado " + atual());
     }
 
     // ---------- utilitários ----------
 
-    private Token peek() {
-        return tokens.get(current);
-    }
+    private String tipo() { return tokens.get(pos).getTipo(); }
 
-    private boolean check(String type) {
-        return peek().getType().equals(type);
-    }
+    private boolean ve(String tipo) { return tipo().equals(tipo); }
 
-    private Token advance() {
-        Token t = tokens.get(current);
-        if (!t.getType().equals(TokenType.EOF)) {
-            current++;
-        }
-        return t;
-    }
-
-    private boolean match(String type) {
-        if (check(type)) {
-            advance();
+    private boolean consome(String tipo) {
+        if (ve(tipo)) {
+            if (!tipo.equals("EOF")) pos++;
             return true;
+        }
+        return falha("esperado " + nome(tipo) + ", mas encontrado " + atual());
+    }
+
+    private boolean falha(String msg) {
+        if (erro == null) {
+            Token t = tokens.get(pos);
+            erro = "Erro sintático [linha " + t.getLinha() + ", coluna " + t.getColuna() + "]: " + msg;
         }
         return false;
     }
 
-    private boolean expect(String type, String message) {
-        if (check(type)) {
-            advance();
-            return true;
-        }
-        return fail(message + ", mas encontrado " + describe());
+    private String atual() {
+        return tipo().equals("EOF") ? "fim do arquivo" : "'" + tokens.get(pos).getTexto() + "'";
     }
 
-    /** Guarda o primeiro erro (na posição do token atual) e devolve false. */
-    private boolean fail(String message) {
-        if (error == null) {
-            Token t = peek();
-            error = new SyntaxError(message, t.getLine(), t.getColumn());
-        }
-        return false;
-    }
-
-    private String describe() {
-        Token t = peek();
-        return t.getType().equals(TokenType.EOF) ? "fim do arquivo" : "'" + t.getLexeme() + "'";
+    private String nome(String tipo) {
+        if (tipo.equals("ID")) return "identificador";
+        if (tipo.equals("NUM")) return "número";
+        if (tipo.equals("EOF")) return "fim do arquivo";
+        return "'" + tipo + "'";
     }
 }
