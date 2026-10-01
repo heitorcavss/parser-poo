@@ -2,3 +2,6 @@ out/
 *.class
 .idea/workspace.xml
 .idea/shelf/
+
+# variáveis de ambiente e segredos (nunca versionar)
+.env
